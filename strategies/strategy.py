@@ -4,5 +4,5 @@ from abc import ABC, abstractmethod
 class Strategy(ABC):
 
 	@abstractmethod
-	def tick(ex: Exchange):
+	def tick(self, dry_run: bool):
 		pass
