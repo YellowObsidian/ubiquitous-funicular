@@ -8,12 +8,12 @@ def main():
     parser = argparse.ArgumentParser(
                     prog='AutoTrade',
                     description='Auto trade')
-    parser.add_argument('--exchange', default='mexc', required=False)
+    parser.add_argument('--exchange', default='bybit', required=False)
     parser.add_argument('--strategy', default='discord_ar', required=False)
     args = parser.parse_args()
 
     if args.exchange == 'bybit':
-        ex = BybitExchange()
+        ex = BybitExchange(testnet=True)
     elif args.exchange == 'mexc':
         ex = MexcExchange()
     print("[INFO] CONNECTED TO THE EXCHANGE")
