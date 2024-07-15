@@ -1,11 +1,12 @@
 from .exchange import Exchange
 from pybit.unified_trading import HTTP
 import yaml
-import pandas as pd
+from typing import Optional
 
 class BybitExchange(Exchange):
   def __init__(self, testnet = True):
-      with open('api.yaml', 'r') as config_file:
+      super().__init__()
+      with open(self.config_file, 'r') as config_file:
           config = yaml.safe_load(config_file)
           self.session =  HTTP(
               testnet=testnet,
@@ -14,25 +15,58 @@ class BybitExchange(Exchange):
           )
 
   def get_server_time(self):
-    return self.session.get_server_time()['time']
+    return int(self.session.get_server_time()['time'])
   
-  def get_ticks(self, symbol: str, interval: str, start: int):
-    kline = self.session.get_kline(
-        symbol=symbol,
-        interval=interval,
-        start=start
-    )
-    return pd.DataFrame(kline['result']['list'],
-        columns = ['start_time', 'open_price', 'high_price', 'low_price', 'close_price', 'volume', 'turnover'])
-  
-  def get_price(self, symbol: str):
-      price_data = self.session.get_tickers(
+  def get_price(self, coin: str):
+    price_data = self.session.get_tickers(
         category = 'linear',
-        symbol = symbol,
+        symbol = self.get_symbol(coin),
      )
-
-      # print(price_data)
-      return float(price_data['result']['list'][0]['lastPrice'])
+    print(price_data)
+    return float(price_data['result']['list'][0]['lastPrice'])
   
-  def place_order(price: list, takeProfits: list[float], stopLoss: float):
-    pass
+  def submit_order(self,
+       symbol: str,
+       direction: str,
+       price: float,
+       vol: float,
+       side: str,
+       type: str,
+       stopLossPrice: Optional[float] = None,
+       leverage: Optional[int] = None,
+       openType: str = "CROSS"):
+    
+    if direction == "OPEN" and side == "LONG":
+       sideI = "Buy"
+    if direction == "CLOSE" and side == "SHORT":
+       sideI = "Buy"
+    if direction == "OPEN" and side == "SHORT":
+       sideI = "Sell"
+    if direction == "CLOSE" and side == "LONG":
+       sideI = "Sell"
+
+    kwargs = {
+       'category': "linear",
+       'symbol': symbol,
+       'side': sideI,
+       'orderType': type.lower().capitalize(),
+       'price': ("%.2f" % price),
+       'qty': int(vol),
+       'side': sideI,
+    }
+
+    if stopLossPrice:
+       kwargs['stopLoss'] = "%.2f" % stopLossPrice
+
+    try:
+      self.session.set_leverage(
+        category = 'linear',
+        symbol = symbol, 
+        buyLeverage = '10',
+        sellLeverage = '10')
+    except:
+       pass
+    return self.session.place_order(**kwargs)
+
+  def get_symbol(self, coin: str) -> str:
+     return coin + "USDT"

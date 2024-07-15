@@ -1,10 +1,12 @@
 from .exchange import Exchange
 from pymexc import futures
 import yaml
+from typing import Optional
 
 class MexcExchange(Exchange):
   def __init__(self):
-      with open('mexc_api.yaml', 'r') as config_file:
+      super().__init__()
+      with open(self.config_file, 'r') as config_file:
           config = yaml.safe_load(config_file)
           self.http_session =  futures.HTTP(
               api_key=config['key'],
@@ -14,10 +16,6 @@ class MexcExchange(Exchange):
               api_key=config['key'],
               api_secret=config['secret'],
           )
-      
-      with open('config.yaml', 'r') as config_file:
-         config = yaml.safe_load(config_file)
-         self.contract_price = config['contract_price']
 
   def get_server_time(self) -> int:
     return self.http_session.ping()['data']
@@ -25,43 +23,39 @@ class MexcExchange(Exchange):
   def get_price(self, coin: str) -> float:
       x = self.http_session.kline(self.get_symbol(coin), "Min1")["data"]
       return x["close"][-1]
-  
-  def place_order(self,
-                coin: str,
-                price: float,
-                takeProfits: list[float],
-                stopLoss: float,
-                side: str) -> None:
-    symbol = self.get_symbol(coin)
-    price = price if price else self.get_price(coin)
-    vol = self.contract_price / price
-    print(f"[INFO] Vol {vol}, price {price}, stop loss {stopLoss}")
-
-    # submit main trade
-    res = self.http_session.order(
-       symbol = symbol,
-       price = price,
-       vol = vol,
-       side = 1 if side == "LONG" else 3,
-       type = 5, # market order
-       stop_loss_price = stopLoss,
-       leverage = 10,
-       open_type = 2, # cross
-    )
-    print(res)
-
-    for takeProfit in takeProfits:
-      print(f"[INFO] Adding take profit {takeProfit}")
-      self.http_session.order(
-        symbol = symbol,
-        price = takeProfit,
-        vol = vol*0.4,
-        side = 4 if side == "LONG" else 2,
-        type = 1, # limit order
-        open_type = 2, # cross
-      )
-      print(res)
        
+  def submit_order(self,
+       symbol: str,
+       direction: str,
+       price: float,
+       vol: float,
+       side: str,
+       type: str,
+       stopLossPrice: Optional[float] = None,
+       leverage: Optional[int] = None,
+       openType: str = "CROSS"):
+    
+    if direction == "OPEN" and side == "LONG":
+       sideI = 1
+    if direction == "CLOSE" and side == "SHORT":
+       sideI = 2
+    if direction == "OPEN" and side == "SHORT":
+       sideI = 3
+    if direction == "CLOSE" and side == "LONG":
+       sideI = 4
+
+    kwargs = {
+       'symbol': symbol,
+       'price': price,
+       'vol': vol,
+       'side': sideI,
+       'type': 1 if type == "LIMIT" else 5,
+       'stop_loss_price': stopLossPrice,
+       'leverage': leverage,
+       'open_type': 1 if openType == "ISOLATED" else 2
+    }
+
+    return self.http_session.order(**kwargs)
 
   def get_symbol(self, coin: str) -> str:
      return coin + "_USDT"

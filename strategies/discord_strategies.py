@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 import time
 from .strategy_utils import Price, TradeIdea
 from exchanges.exchange import Exchange
+from typing import Tuple
 
 class DiscordStrategy(Strategy):
 
@@ -25,14 +26,69 @@ class DiscordStrategy(Strategy):
 
       self.used_ideas = set({})
 
-      time.sleep(5)
+      time.sleep(10)
+
+  def tick(self, dry_run = False):
+    messages = self.driver.find_elements(By.XPATH, self.messages_xpath)
+    
+    for message in messages:
+      trade_idea = self.parse_message(message)
+      
+      if not trade_idea or str(trade_idea) in self.used_ideas:
+        continue
+
+      self.used_ideas.add(str(trade_idea))
+
+      if dry_run:
+        continue
+
+      print(trade_idea)
+
+      coin, price = self.get_price(trade_idea.coin)
+      if not price:
+        continue
+
+      multiplier = price / trade_idea.price.price
+      print(f"[INFO] Multiplier is {multiplier}")
+
+      trade_idea.take_profits = [tp*multiplier for tp in trade_idea.take_profits]
+      trade_idea.stop_loss *= multiplier
+      
+      print(f"[INFO] Price of {trade_idea.coin} is {price}, multiplier is {multiplier}")
+      print("[INFO] Placing order")
+      self.ex.place_orders(coin,
+                          None if trade_idea.price.use_market_price else price,
+                          trade_idea.take_profits,
+                          trade_idea.stop_loss,
+                          trade_idea.trade_side)
+      
+
+  def get_price(self, coin) -> Tuple[str, float]:
+    try:
+      return coin, self.ex.get_price(coin)
+    except:
+      print(f"[WARN] Couldn't get price for {coin}")
+      if coin in _COINS_MULTIPLIER and (
+        coin.startswith(
+          str(
+            int(_COINS_MULTIPLIER[coin])))):
+        coin = coin[len(str(
+            int(_COINS_MULTIPLIER[coin]))):]
+      else:
+        coin = "1000" + coin
+
+      try:
+        print(f"[WARN] New coin {coin} worked")
+        return coin, self.ex.get_price(coin)
+      except:
+        print(f"[WARN] Couldn't get price for {coin}, skipping trade")
+        return None
 
 
 _COINS_MULTIPLIER = {
   "PEPE": 1000.0,
   "BONK": 1000.0,
   "BEER": 1000.0,
-  "FLOKI": 1000.0,
   "TURBO": 1000.0,
   "RATS": 1000.0,
   "LADYS": 10*1000.0,
@@ -44,56 +100,45 @@ _COINS_MULTIPLIER = {
   "STARL": 10.0*1000.0,
 }
 
+_PROMPT = """
+I will give you a discord message (possible with an image) that contains information from an analyst about a trade. I would like you to extract that information.
+
+Always use the highest leverage indicated in the post. If there is no leverage indicated use 20x as a default leverage.
+
+If there is no trade to be taken write None
+
+The output should be as following:
+first line: name of the token
+second line: RISKY if the trade is risky, NOT RISKY otherwise
+third line: the price of the token or the word MARKET
+4th line: the stop loss price (or word None)
+5th line: comma separated list of take profits (or word None)
+6th line: DCA
+7th line: True if the trade should be trimmed, False otherwise
+8th line: True if the trade should be moved to break even
+9th line: the leverage
+
+Don't add any extra text. Don't add commas inside numbers
+
+Message: {message}
+"""
+
+class DiscordChatGPTStrategy(DiscordStrategy):
+  
+  def __init__(self, traders_url: str, ex: Exchange):
+    super().__init__(traders_url,
+                     "ye5h",
+                     ex)
+    
+  def parse_message(self, message: str) -> TradeIdea:
+    pass
+
 class DiscordArStrategy(DiscordStrategy):
 
   def __init__(self, ex: Exchange):
     super().__init__('https://discord.com/channels/813255168597819444/820224352528105513',
                      "//div[contains(@id,'message-content')]",
                      ex)
-
-  def tick(self, dry_run = False):
-    messages = self.driver.find_elements(By.XPATH, self.messages_xpath)
-    
-    for message in messages:
-      trade_idea = self.parse_message(message)
-      
-      if not trade_idea:
-        continue
-
-      if str(trade_idea) in self.used_ideas:
-        continue
-
-      self.used_ideas.add(str(trade_idea))
-
-      if dry_run:
-        continue
-
-      print(trade_idea)
-      try:
-        price = self.ex.get_price(trade_idea.coin)
-      except:
-        print(f"[WARN] Couldn't get price for {trade_idea.coin}")
-        trade_idea.coin = "1000" + trade_idea.coin
-
-        try:
-          price = self.ex.get_price(trade_idea.coin)
-          print(f"[WARN] New coin {trade_idea.coin} worked")
-        except:
-          print(f"[WARN] Couldn't get price for {trade_idea.coin}, skipping trade")
-          continue
-
-      multiplier = _COINS_MULTIPLIER.get(trade_idea.coin, 1.0)
-
-      trade_idea.take_profits = [tp/multiplier for tp in trade_idea.take_profits]
-      trade_idea.stop_loss /= multiplier
-      
-      print(f"[INFO] Price of {trade_idea.coin} is {price}, multiplier is {multiplier}")
-      print("[INFO] Placing order")
-      self.ex.place_order(trade_idea.coin,
-                          None if trade_idea.price.use_market_price else price,
-                          trade_idea.take_profits,
-                          trade_idea.stop_loss,
-                          trade_idea.trade_side)
 
   def parse_message(self, message: str) -> TradeIdea:
     lines = message.text.split('\n')
