@@ -22,7 +22,7 @@ class BybitExchange(Exchange):
         category = 'linear',
         symbol = self.get_symbol(coin),
      )
-    print(price_data)
+    #  print(price_data)
     return float(price_data['result']['list'][0]['lastPrice'])
   
   def submit_order(self,
@@ -33,7 +33,7 @@ class BybitExchange(Exchange):
        side: str,
        type: str,
        stopLossPrice: Optional[float] = None,
-       leverage: Optional[int] = None,
+       leverage: Optional[str] = None,
        openType: str = "CROSS"):
     
     if direction == "OPEN" and side == "LONG":
@@ -45,25 +45,31 @@ class BybitExchange(Exchange):
     if direction == "CLOSE" and side == "LONG":
        sideI = "Sell"
 
+    if int(vol) * price <= 5.1:
+      return None
+   
     kwargs = {
        'category': "linear",
        'symbol': symbol,
        'side': sideI,
        'orderType': type.lower().capitalize(),
-       'price': ("%.2f" % price),
+       'price': ("%.4f" % price),
        'qty': int(vol),
        'side': sideI,
     }
 
     if stopLossPrice:
-       kwargs['stopLoss'] = "%.2f" % stopLossPrice
+       kwargs['stopLoss'] = "%.4f" % stopLossPrice
+
+    print(f"Args for trade {kwargs}")
 
     try:
-      self.session.set_leverage(
-        category = 'linear',
-        symbol = symbol, 
-        buyLeverage = '10',
-        sellLeverage = '10')
+      if leverage:
+         self.session.set_leverage(
+            category = 'linear',
+            symbol = symbol, 
+            buyLeverage = leverage,
+            sellLeverage = leverage)
     except:
        pass
     return self.session.place_order(**kwargs)

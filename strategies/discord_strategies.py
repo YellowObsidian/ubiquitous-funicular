@@ -16,6 +16,8 @@ class DiscordStrategy(Strategy):
       self.driver = webdriver.Chrome()
       self.driver.get(channel_id)
 
+      time.sleep(5)
+
       self.driver.find_element(By.NAME, 'email').send_keys(config['username'])
       self.driver.find_element(By.NAME, 'password').send_keys(config['password'])
       self.driver.find_element(By.XPATH, "//button[contains(., 'Log')]").click()
@@ -28,7 +30,7 @@ class DiscordStrategy(Strategy):
 
       time.sleep(10)
 
-  def tick(self, dry_run = False):
+  def tick(self, dry_run = False, use_multiplier = False):
     messages = self.driver.find_elements(By.XPATH, self.messages_xpath)
     
     for message in messages:
@@ -48,19 +50,24 @@ class DiscordStrategy(Strategy):
       if not price:
         continue
 
-      multiplier = price / trade_idea.price.price
-      print(f"[INFO] Multiplier is {multiplier}")
+      print(f"[INFO] Coin {coin} with price {price}")
 
-      trade_idea.take_profits = [tp*multiplier for tp in trade_idea.take_profits]
-      trade_idea.stop_loss *= multiplier
-      
-      print(f"[INFO] Price of {trade_idea.coin} is {price}, multiplier is {multiplier}")
+      if use_multiplier:
+        multiplier = price / trade_idea.price.price
+        print(f"[INFO] Multiplier is {multiplier}")
+
+        trade_idea.take_profits = [tp*multiplier for tp in trade_idea.take_profits]
+        trade_idea.stop_loss *= multiplier
+        
+        print(f"[INFO] Price of {trade_idea.coin} is {price}, multiplier is {multiplier}")
+
       print("[INFO] Placing order")
       self.ex.place_orders(coin,
-                          None if trade_idea.price.use_market_price else price,
+                          trade_idea.price.price,
                           trade_idea.take_profits,
                           trade_idea.stop_loss,
-                          trade_idea.trade_side)
+                          trade_idea.trade_side,
+                          compute_leverage=True)
       
 
   def get_price(self, coin) -> Tuple[str, float]:
@@ -135,26 +142,27 @@ class DiscordChatGPTStrategy(DiscordStrategy):
 
 class DiscordArStrategy(DiscordStrategy):
 
-  def __init__(self, ex: Exchange):
-    super().__init__('https://discord.com/channels/813255168597819444/820224352528105513',
+  def __init__(self, ex: Exchange, discord_url: str = 'https://discord.com/channels/813255168597819444/820224352528105513'):
+    super().__init__(discord_url,
                      "//div[contains(@id,'message-content')]",
                      ex)
 
   def parse_message(self, message: str) -> TradeIdea:
     lines = message.text.split('\n')
     for i in range(len(lines)):
-      lines[i] = lines[i].strip()
+      lines[i] = ''.join([ch for ch in lines[i].strip() if ch.isalnum() or ch == ' ' or ch == '.'])
     words = message.text.split(' ')
     if words[0] not in ('SHORT', 'LONG'):
       return None
 
     trade_data = lines[0].split(' ')
+    # print(trade_data)
     trade_side = trade_data[0]
-    ticker = trade_data[1][1:]
+    ticker = trade_data[1]
     use_market_price = "MARKET" in lines[0]
 
     try:
-      entry_price = float(lines[1].split(' ')[1][1:])
+      entry_price = float(lines[1].split(' ')[1])
     except ValueError:
       return None
 
@@ -167,9 +175,9 @@ class DiscordArStrategy(DiscordStrategy):
       
       try:
         if words[0].startswith('TP'):
-          take_profits.append(float(words[-1][1:]))
+          take_profits.append(float(words[-1]))
         elif words[0].startswith('SL'):
-          stop_loss = float(words[-1][1:])
+          stop_loss = float(words[-1])
       except ValueError:
         return None
 
@@ -178,3 +186,8 @@ class DiscordArStrategy(DiscordStrategy):
                     Price(use_market_price=use_market_price, price=entry_price),
                     take_profits,
                     stop_loss)
+  
+
+class TestArStrategy(DiscordArStrategy):
+  def __init__(self, ex: Exchange):
+    super().__init__(ex, 'https://discord.com/channels/1116866310769487904/1264706569245954068')
